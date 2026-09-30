@@ -1,5 +1,0 @@
-Alice: Charlie David
-Eve: Charlie
-David: Alice Charlie
-Bob:
-Charlie: Alice Eve David

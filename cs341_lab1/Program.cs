@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
+using System.Linq;
 
 class Program
 {
@@ -10,7 +10,7 @@ class Program
         if (args.Length < 3)
         {
             Console.Error.WriteLine(
-                "Использование: GraphConv <входной_файл> <файл_матрицы> <файл_списка>");
+                "Использование: Task1 <входной_файл> <файл_матрицы> <файл_списка>");
             return 1;
         }
 
@@ -24,91 +24,87 @@ class Program
             return 1;
         }
 
-        // ---------- 1. Чтение рёбер и нумерация вершин в порядке появления ----------
-        var vertexOrder = new List<string>();
-        var vertexIndex = new Dictionary<string, int>(StringComparer.Ordinal);
-        var edges = new List<(int A, int B)>();
+        // --- 1. Читаем все непустые строки ---
+        var lines = File.ReadAllLines(inputPath)
+                        .Select(l => l.Trim())
+                        .Where(l => l.Length > 0)
+                        .ToList();
 
-        int GetIndex(string v)
+        if (lines.Count == 0)
         {
-            if (!vertexIndex.TryGetValue(v, out int idx))
-            {
-                idx = vertexOrder.Count;
-                vertexIndex[v] = idx;
-                vertexOrder.Add(v);
-            }
-            return idx;
+            Console.Error.WriteLine("Входной файл пуст.");
+            return 1;
         }
 
-        foreach (var rawLine in File.ReadLines(inputPath))
-        {
-            var line = rawLine.Trim();
-            if (line.Length == 0 || line.StartsWith("#") || line.StartsWith("//"))
-                continue;
+        // --- 2. Первая строка — список вершин в нужном порядке ---
+        var vertexOrder = lines[0]
+            .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .ToList();
 
-            var parts = line.Split(
+        int n = vertexOrder.Count;
+        var vertexIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < n; i++)
+            vertexIndex[vertexOrder[i]] = i;
+
+        // --- 3. Структуры для результатов ---
+        int[,] matrix = new int[n, n];
+
+        // Списки смежности: соседи добавляются В ПОРЯДКЕ ПОЯВЛЕНИЯ РЁБЕР,
+        // дубликатов не допускаем.
+        var adj = new List<List<int>>();
+        var adjSet = new HashSet<int>[n];
+        for (int i = 0; i < n; i++)
+        {
+            adj.Add(new List<int>());
+            adjSet[i] = new HashSet<int>();
+        }
+
+        // --- 4. Остальные строки — рёбра ---
+        for (int k = 1; k < lines.Count; k++)
+        {
+            var parts = lines[k].Split(
                 new[] { ' ', '\t', ';', ',' },
                 StringSplitOptions.RemoveEmptyEntries);
 
             if (parts.Length < 2)
             {
-                Console.Error.WriteLine($"Предупреждение: пропущена строка \"{rawLine}\"");
+                Console.Error.WriteLine($"Предупреждение: пропущена строка \"{lines[k]}\"");
                 continue;
             }
 
-            int a = GetIndex(parts[0]);
-            int b = GetIndex(parts[1]);
-            edges.Add((a, b));
-        }
+            if (!vertexIndex.TryGetValue(parts[0], out int a) ||
+                !vertexIndex.TryGetValue(parts[1], out int b))
+            {
+                Console.Error.WriteLine(
+                    $"Предупреждение: неизвестная вершина в строке \"{lines[k]}\"");
+                continue;
+            }
 
-        int n = vertexOrder.Count;
-        if (n == 0)
-        {
-            Console.Error.WriteLine("Во входном файле не найдено ни одной вершины.");
-            return 1;
-        }
-
-        // ---------- 2. Построение матрицы смежности ----------
-        int[,] matrix = new int[n, n];
-        foreach (var (a, b) in edges)
-        {
+            // Матрица смежности (неориентированная)
             matrix[a, b] = 1;
             matrix[b, a] = 1;
+
+            // Список смежности — в порядке появления рёбер
+            if (adjSet[a].Add(b)) adj[a].Add(b);
+            if (adjSet[b].Add(a)) adj[b].Add(a);
         }
 
-        using (var w = new StreamWriter(matrixPath, false, Encoding.UTF8))
+        // --- 5. Запись матрицы смежности ---
+        using (var w = new StreamWriter(matrixPath))
         {
-            // шапка с именами столбцов
-            w.Write('\t');
-            w.WriteLine(string.Join('\t', vertexOrder));
-
             for (int i = 0; i < n; i++)
             {
-                w.Write(vertexOrder[i]);
                 for (int j = 0; j < n; j++)
                 {
-                    w.Write('\t');
+                    if (j > 0) w.Write(' ');
                     w.Write(matrix[i, j]);
                 }
                 w.WriteLine();
             }
         }
 
-        // ---------- 3. Построение списка смежности ----------
-        var adj = new SortedSet<int>[n];
-        for (int i = 0; i < n; i++) adj[i] = new SortedSet<int>();
-
-        foreach (var (a, b) in edges)
-        {
-            if (a == b) adj[a].Add(a);        // петля
-            else
-            {
-                adj[a].Add(b);
-                adj[b].Add(a);
-            }
-        }
-
-        using (var w = new StreamWriter(listPath, false, Encoding.UTF8))
+        // --- 6. Запись списка смежности ---
+        using (var w = new StreamWriter(listPath))
         {
             for (int i = 0; i < n; i++)
             {
@@ -123,10 +119,7 @@ class Program
             }
         }
 
-        Console.WriteLine(
-            $"Готово. Вершин: {n}, рёбер: {edges.Count}.");
-        Console.WriteLine($"  матрица смежности : {matrixPath}");
-        Console.WriteLine($"  список смежности  : {listPath}");
+        Console.WriteLine($"Готово: {inputPath} -> {matrixPath}, {listPath}");
         return 0;
     }
 }
